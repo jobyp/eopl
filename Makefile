@@ -1,4 +1,4 @@
-PROGS:=env.ml env_proc.ml
+PROGS:=env.ml env_proc.ml lc_exp.ml
 BINS:=$(patsubst %.ml,%.native,$(PROGS))
 
 .PHONY: all
@@ -6,7 +6,7 @@ all: $(BINS)
 	@:
 
 %.native: %.ml
-	ocamlbuild -classic-display $@
+	if ocamlbuild  $@; then ./$@ ; fi
 
 .PHONY: clean
 clean:
