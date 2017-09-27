@@ -1,88 +1,80 @@
-type variable = string
-type fname = string
-type arg = string
+type sym = Sym of string
 
-type expression = 
-  | Cons_exp of int (* OCaml int *)
-  | Diff_exp of (expression * expression)
-  | Zero_exp of expression
-  | If_exp of (expression * expression * expression)
-  | Var_exp of variable
-  | Let_exp of (variable * expression * expression)
-  | Proc_exp of (variable * expression)
-  | Letrec_exp of (fname * arg * expression * expression)
-  | Call_exp of (expression * expression)
+type exp = Const of int
+         | Diff of exp * exp
+         | Zero of exp
+         | If of exp * exp * exp
+         | Var of sym
+         | Let of exp * exp * exp
+         | Proc of exp * exp
+         | Call of exp * exp
 
-type program = A_program of expression
+type program = Program of exp
 
-type body = expression
-
-type env = 
-  | Empty_env
-  | Extend_env of (variable * value * env)
-  | Extend_env_rec of (fname * arg * body * env)
-and value = 
-  | Int of int
-  | Bool of bool
-  | Proc of (variable * expression * env)
+type exp_val = Num_val of int
+             | Bool_val of bool
+             | Proc_val of sym * exp * env
+ and env     = Empty
+             | Extend of sym * exp_val * env
 
 
-let empty_env () = Empty_env
+let symbol_equal s1 s2 =
+  match s1, s2 with
+  | Sym s1', Sym s2' -> s1' = s2'
 
-let extend_env variable value env = Extend_env (variable, value, env)
 
-let extend_env_rec fname arg body env = Extend_env_rec (fname, arg, body, env)
+let string_of_symbol s =
+  match s with
+  | Sym s' -> s'
 
-let rec apply_env variable = function 
-  | Empty_env -> failwith ("apply_env: binding not found for " ^ variable)
-  | Extend_env (var, val', _) when var = variable -> val'
-  | Extend_env (_, _, env) -> apply_env variable env
-  | Extend_env_rec (fname, arg, body, saved_env) as env ->
-      if fname = variable
-      then Proc (arg, body, env)
-      else apply_env variable saved_env
+let empty_env () = Empty
 
-let init_env = (* i = 1; v = 5; x = 10 *)
-  extend_env "i" (Int 1) 
-    (extend_env "v" (Int 5)
-       (extend_env "x" (Int 10) 
-          (empty_env ())))
+let extend_env env var value =
+  Extend (var, value, env)
 
-let minus v1 v2 = 
-  match v1, v2 with
-    | Int i1, Int i2 -> Int (i1 - i2)
-    | _, _ -> raise (Invalid_argument "minus: expected Ints")
+let rec apply_env env var =
+  match env with
+  | Empty            -> raise (Failure ("no binding for " ^ string_of_symbol var))
+  | Extend (s, v, e) -> if symbol_equal s var then v
+                        else apply_env e var
 
-let is_zero = function
-  | Int n when n = 0 -> true
-  | _ -> false
 
-let rec value_of_exp exp env = 
+let rec value_of exp env =
   match exp with
-    | Cons_exp i -> Int i
-    | Var_exp var -> apply_env var env
-    | Diff_exp (exp1, exp2) -> let v1 = value_of_exp exp1 env in
-                            let v2 = value_of_exp exp2 env in
-                            minus v1 v2
-    | Zero_exp exp -> Bool (is_zero (value_of_exp exp env))
-    | If_exp (exp1, exp2, exp3) -> 
-        (match (value_of_exp exp1 env) with
-          | Bool true -> value_of_exp exp2 env
-          | Bool false -> value_of_exp exp3 env
-          | _ -> raise (Invalid_argument "value_of_exp: expected a boolean expression"))
-    | Let_exp (var, exp1, exp2) ->
-        let new_env = extend_env var (value_of_exp exp1 env) env in
-        value_of_exp exp2 new_env
-    | Proc_exp (var, exp) -> Proc (var, exp, env)
-    | Letrec_exp (fname, arg, body, exp) -> 
-        let new_env = extend_env_rec fname arg body env in
-        value_of_exp exp new_env
-    | Call_exp (rator, rand) ->
-        (match (value_of_exp rator env) with
-          | Proc (var, exp, saved_env) -> 
-              let let_exp = Let_exp (var, rand, exp) in
-              value_of_exp let_exp saved_env
-          | _ -> raise (Invalid_argument "value_of_exp: expected a procedure"))
+  | Const n -> Num_val n
+  | Var v -> apply_env env v
+  | Diff (e1, e2) -> ( match value_of e1 env, value_of e2 env with
+                       | Num_val n1, Num_val n2 -> Num_val (n1 - n2)
+                       | _, _                   -> raise (Failure "Type error 1"))
+  | Zero e -> let n = value_of e env in
+              ( match n with
+                | Num_val n -> Bool_val (n = 0)
+                | _         -> raise (Failure "Type error 2"))
+  | If (e1, e2, e3) -> ( match value_of e1 env with
+                         | Bool_val true -> value_of e2 env
+                         | Bool_val false -> value_of e3 env
+                         | _ -> raise (Failure "Type error 3"))
+  | Let (e1, e2, e3) -> ( match e1 with
+                          | Var s -> let exp_val = value_of e2 env in
+                                     let env' = extend_env env s exp_val in
+                                     value_of e3 env'
+                          | _ -> raise (Failure "Expected Var exp 4"))
+  | Proc (v, e) -> ( match v with
+                     | Var s -> Proc_val (s, e, env)
+                     | _     -> raise (Failure "Expected Var exp 5"))
+  | Call (e1, e2) -> ( match (value_of e1 env) with
+                       | Proc_val (s, e1', env') -> let v = value_of e2 env in
+                                                    let env'' = extend_env env' s v in
+                                                    value_of e1' env''
+                       | _ -> raise (Failure "Expected operator exp 6"))
 
-let value_of_program = function
-  | A_program exp -> value_of_exp exp init_env
+
+let value_of_program program =
+  match program with
+  | Program exp -> value_of exp Empty
+
+
+let () =
+  Printf.printf "Tests are missing!\n";
+  exit 0
+
